@@ -92,7 +92,7 @@ public class ClientAdminEndpointsMockMvcTests {
                         testAccounts.getAdminClientId(), 
                         testAccounts.getAdminClientSecret(), 
                         "client_credentials",
-                        "clients.read clients.write clients.secret");
+                        "clients.admin clients.read clients.write clients.secret");
 
         applicationEventPublisher = mock(ApplicationEventPublisher.class);
         ClientAdminEventPublisher eventPublisher = (ClientAdminEventPublisher)webApplicationContext.getBean("clientAdminEventPublisher");
@@ -434,8 +434,8 @@ public class ClientAdminEndpointsMockMvcTests {
                 testAccounts.getUserName(),
                 testAccounts.getPassword(),
                 "oauth.approvals");
-        Approval[] approvals = addApprovals(userToken, details[0].getClientId());
-        approvals = getApprovals(userToken, details[0].getClientId());
+        addApprovals(userToken, details[0].getClientId());
+        Approval[] approvals = getApprovals(userToken, details[0].getClientId());
         assertEquals(3, approvals.length);
         
 
@@ -746,6 +746,138 @@ public class ClientAdminEndpointsMockMvcTests {
         }
     }
 
+    @Test
+    public void testClientsAdminPermissions() throws Exception {
+        ClientDetails adminsClient = createClientAdminsClient(adminToken);
+
+        //create clients
+        ClientDetailsModification[] clients = createBaseClients(3, "client_credentials,refresh_token");
+        for (ClientDetailsModification c : clients) {
+            c.setScope(Collections.singletonList("oauth.approvals"));
+            c.setAction(c.ADD);
+        }
+
+        String token = testClient.getOAuthAccessToken(
+                adminsClient.getClientId(),
+                "secret",
+                "client_credentials",
+                "clients.admin");
+
+        MockHttpServletRequestBuilder modifyClientsPost = post("/oauth/clients/tx/modify")
+                .header("Authorization", "Bearer " + token)
+                .accept(APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
+                .content(toString(clients));
+        ResultActions result = mockMvc.perform(modifyClientsPost);
+        result.andExpect(status().isOk());
+    }
+
+    @Test
+    public void testNonClientsAdminPermissions() throws Exception {
+        ClientDetails adminsClient = createReadWriteClient(adminToken);
+
+        //create clients
+        ClientDetailsModification[] clients = createBaseClients(3, "client_credentials,refresh_token");
+        for (ClientDetailsModification c : clients) {
+            c.setScope(Collections.singletonList("oauth.approvals"));
+            c.setAction(c.ADD);
+        }
+
+        String token = testClient.getOAuthAccessToken(
+                adminsClient.getClientId(),
+                "secret",
+                "client_credentials",
+                "clients.write");
+
+        MockHttpServletRequestBuilder modifyClientsPost = post("/oauth/clients/tx/modify")
+                .header("Authorization", "Bearer " + token)
+                .accept(APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
+                .content(toString(clients));
+        ResultActions result = mockMvc.perform(modifyClientsPost);
+        result.andExpect(status().isForbidden());
+    }
+
+
+    @Test
+    public void testCreateAsAdminPermissions() throws Exception {
+        ClientDetails adminsClient = createClientAdminsClient(adminToken);
+
+        //create clients
+        ClientDetailsModification[] clients = createBaseClients(1, "client_credentials,refresh_token");
+        for (ClientDetailsModification c : clients) {
+            c.setScope(Collections.singletonList("oauth.approvals"));
+            c.setAction(c.ADD);
+        }
+
+        String token = testClient.getOAuthAccessToken(
+                adminsClient.getClientId(),
+                "secret",
+                "client_credentials",
+                "clients.admin");
+
+        MockHttpServletRequestBuilder modifyClientsPost = post("/oauth/clients")
+                .header("Authorization", "Bearer " + token)
+                .accept(APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
+                .content(toString(clients[0]));
+        ResultActions result = mockMvc.perform(modifyClientsPost);
+        result.andExpect(status().isCreated());
+    }
+
+    @Test
+    public void testCreateAsReadPermissions() throws Exception {
+        ClientDetails adminsClient = createReadWriteClient(adminToken);
+
+        //create clients
+        ClientDetailsModification[] clients = createBaseClients(1, "client_credentials,refresh_token");
+        for (ClientDetailsModification c : clients) {
+            c.setScope(Collections.singletonList("oauth.approvals"));
+            c.setAction(c.ADD);
+        }
+
+        String token = testClient.getOAuthAccessToken(
+                adminsClient.getClientId(),
+                "secret",
+                "client_credentials",
+                "clients.read");
+
+        MockHttpServletRequestBuilder modifyClientsPost = post("/oauth/clients")
+                .header("Authorization", "Bearer " + token)
+                .accept(APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
+                .content(toString(clients[0]));
+        ResultActions result = mockMvc.perform(modifyClientsPost);
+        result.andExpect(status().isForbidden());
+    }
+
+    @Test
+    public void testCreateAsWritePermissions() throws Exception {
+        ClientDetails adminsClient = createReadWriteClient(adminToken);
+
+        //create clients
+        ClientDetailsModification[] clients = createBaseClients(1, "client_credentials,refresh_token");
+        for (ClientDetailsModification c : clients) {
+            c.setScope(Collections.singletonList("oauth.approvals"));
+            c.setAction(c.ADD);
+        }
+
+        String token = testClient.getOAuthAccessToken(
+                adminsClient.getClientId(),
+                "secret",
+                "client_credentials",
+                "clients.write");
+
+        MockHttpServletRequestBuilder modifyClientsPost = post("/oauth/clients")
+                .header("Authorization", "Bearer " + token)
+                .accept(APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
+                .content(toString(clients[0]));
+        ResultActions result = mockMvc.perform(modifyClientsPost);
+        result.andExpect(status().isCreated());
+    }
+
+
     private Approval[] getApprovals(String token, String clientId) throws Exception {
         String filter = "clientId eq '"+clientId+"'";
         
@@ -803,6 +935,30 @@ public class ClientAdminEndpointsMockMvcTests {
         } else {
             throw new InvalidClientDetailsException(status+" : "+body);
         }
+    }
+
+    private ClientDetails createClientAdminsClient(String token) throws Exception {
+        String scopes = "oauth.approvals,clients.admin";
+        BaseClientDetails client = createBaseClient(null, "password,client_credentials", scopes, scopes);
+        MockHttpServletRequestBuilder createClientPost = post("/oauth/clients")
+                .header("Authorization", "Bearer " + token)
+                .accept(APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
+                .content(toString(client));
+        mockMvc.perform(createClientPost).andExpect(status().isCreated());
+        return getClient(client.getClientId());
+    }
+
+    private ClientDetails createReadWriteClient(String token) throws Exception {
+        String scopes = "oauth.approvals,clients.read,clients.write";
+        BaseClientDetails client = createBaseClient(null, "password,client_credentials", scopes, scopes);
+        MockHttpServletRequestBuilder createClientPost = post("/oauth/clients")
+                .header("Authorization", "Bearer " + token)
+                .accept(APPLICATION_JSON)
+                .contentType(APPLICATION_JSON)
+                .content(toString(client));
+        mockMvc.perform(createClientPost).andExpect(status().isCreated());
+        return getClient(client.getClientId());
     }
 
     private ClientDetails createAdminClient(String token) throws Exception {
